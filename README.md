@@ -12,4 +12,7 @@ make
 # Only needed if unpacking the .nt file
 cd ../..
 ./trident/build/trident load -f lubm1.nt -i ./lubm1/ --relsOwnIDs 1
+
+# Make sure to add the trident build directory to the environment PYTHONPATH variable
+python3 train.py ./lubm1 ./models
 ```

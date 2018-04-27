@@ -68,7 +68,7 @@ logger.info("Initialization time: %0.2f sec." % (time.time() - start_time))
 # Let's do the training!
 for epoch in range(epochs):
     start_time = time.time()
-    batcher = trident.Batcher(inputdir, batch_size, 1) # can add valid, train or test to determine which dataset to use.
+    batcher = trident.Batcher(inputdir, batch_size, 1, 0.1, 0.1)
     batcher.start()
     losses = [] # Record the losses
     i = 0

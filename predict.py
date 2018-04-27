@@ -3,17 +3,19 @@ import numpy as np
 import trident
 import os
 
-def get_rank(translation, target_index, all_tails_e):
+batch_size = 50
 
-	# Change to L1
-	distances = tf.norm(all_tails_e-translation, ord='euclidean', axis=1)
+def get_rank(translation, target_index, tails_embedded):
 
-	values, indices = tf.nn.top_k(distances, 20)
+	distances = tf.norm(tails_embedded-translation, ord=1, axis=1)
+
+	values, indices = tf.nn.top_k(distances, batch_size)
 
 	values = tf.reverse(values, [0])
 	indices = tf.reverse(indices, [0])
-	return values, indices, tf.where(tf.equal(indices, target_index))
+	rank = tf.where(tf.equal(indices, target_index))
 
+	return tf.cast(rank[0][0], tf.int32)
 
 
 with tf.Session() as sess:
@@ -28,7 +30,6 @@ with tf.Session() as sess:
 
 	# Initialize batcher
 	inputdir = "./lubm1"
-	batch_size = 20
 	batcher = trident.Batcher(inputdir, batch_size, 1) # can add valid, train or test to determine which dataset to use.
 	batcher.start()
 	batch = batcher.getbatch()
@@ -46,37 +47,13 @@ with tf.Session() as sess:
 	# Get translations by adding head and relation embeddings
 	translations = heads_embedded + rel_embedded
 
-	# translation = translations[0]
+	# Make a vector of indices
+	ranks = tf.cast(tf.linspace(0., float(batch_size-1), batch_size), tf.int32)
 
-	# distances = tf.norm(tails_embedded-translation, ord='euclidean', axis=1)
-	# values, indices = tf.nn.top_k(distances, 20)
+	# Map the get_rank function to each index
+	ranks = tf.map_fn(lambda index: get_rank(translations[index], index, tails_embedded), ranks)
 
-	# rank = get_rank(translations[0], 0, tails_embedded)
+	# Get mean rank
+	mean_rank = tf.reduce_mean(tf.cast(ranks, tf.float32))
 
-	# look up how to do for loop in tf.
-
-	values, indices, rank = get_rank(translations[3], 3, tails_embedded)
-
-
-	print(sess.run([values, indices, rank, ]))
-
-
-
-	# with graph.as_default():
-	# 	with tf.device('/cpu:0'):
-	# 		filename_queue = tf.train.string_input_producer("???")
-	# 		reader = tf.TFRecordReader()
-	# 		key, value = reader.read(filename_queue)
-	# 		features = tf.parse_single_example(value,
-	# 			features={
-	# 				'triple': tf.FixedLenFeature([3], tf.int64),
-	# 			})
-	# 		triples = features['triple']
-			# return triples
-
-	# For each triple
-	#
-
-	# To get database:
-	# make database again with adjustment Jacopo made
-	# Once trained, throw away _batch and rename _batch_test to _batch
+	print(sess.run(mean_rank))
