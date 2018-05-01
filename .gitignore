@@ -2,4 +2,7 @@
 /models/*
 __pycache__/
 *.py[cod]
+/fb15k/*
+/lubm1/*
+/models_fb/*
 
