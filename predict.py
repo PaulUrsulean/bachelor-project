@@ -3,7 +3,7 @@ import numpy as np
 import trident
 import os
 
-batch_size = 50
+batch_size = 10
 
 # Computes the rank of a translation head+rel, by checking how close
 # the vector is to the actual target, in comparison with other embeddings.
@@ -19,6 +19,18 @@ def get_rank(translation, target_index, entities):
 
 	return tf.cast(rank[0][0], tf.int32)
 
+def get_labels(kb_dir):
+
+	db = trident.Db(kb_dir)
+	batcher = trident.Batcher(kb_dir, batch_size, 1)
+	batcher.start()
+	batch = batcher.getbatch()
+
+	f_ent = np.vectorize(lambda index: db.lookup_str(index))
+	f_rel = np.vectorize(lambda index: db.lookup_relstr(index))
+
+	return [f_ent(batch[0]), f_rel(batch[1]), f_ent(batch[2])]
+
 def rank_translations(model_dir, kb_dir):
 	with tf.Session() as sess:
 
@@ -31,7 +43,7 @@ def rank_translations(model_dir, kb_dir):
 		emb_e, emb_r = tf.trainable_variables()
 
 		# Initialize batcher
-		batcher = trident.Batcher(kb_dir, batch_size, 1) # can add valid, train or test to determine which dataset to use.
+		batcher = trident.Batcher(kb_dir, batch_size, 1)
 		batcher.start()
 		batch = batcher.getbatch()
 
@@ -63,5 +75,8 @@ def rank_translations(model_dir, kb_dir):
 
 		return sess.run([mean_rank_forward, mean_rank_backward])
 
-f, b = rank_translations("./models_fb", "./fb15k")
-print("The mean rank forward is: {}\nThe mean rank backward is: {}".format(f, b))
+# f, b = rank_translations("./models_fb", "./fb15k")
+# print("The mean rank forward is: {}\nThe mean rank backward is: {}".format(f, b))
+
+print(get_labels("./fb15k"))
+
