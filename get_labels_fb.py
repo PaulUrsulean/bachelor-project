@@ -36,11 +36,11 @@ def ids_to_labels(Id_list, entity=True, language="en"):
 				if len(label) < 2:
 					raise RuntimeError("Language delimiter not detected")
 				if label[1] == language:
-					return code_to_label[pseudo] = label[0]
+					code_to_label[pseudo] = label[0][1:-1]
 
 		# Insert nothing in the dict if nothing is found
 		# Defaultdict defaults missing values to '' for (str).
-
+	return code_to_label
 
 entities = list(set().union(fb.all_s(), fb.all_o()))
 relations= fb.all_p()
