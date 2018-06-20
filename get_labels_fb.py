@@ -39,6 +39,7 @@ def ids_to_labels(Id_list, entity=True, language="en", descriptions=True):
 					raise RuntimeError("Language delimiter not detected")
 				if label[1] == language:
 					code_to_label[pseudo] = label[0][1:-1]
+					break
 
 		# Insert nothing in the dict if nothing is found
 		# Defaultdict defaults missing values to '' for (str).
