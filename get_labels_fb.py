@@ -12,9 +12,11 @@ import pickle
 fb = trident.Db("./fb15k")
 big= trident.Db("/home/jurbani/data/motherkb-trident")
 
-def ids_to_labels(Id_list, entity=True, language="en"):
+def ids_to_labels(Id_list, entity=True, language="en", descriptions=True):
 
 	code_to_label = defaultdict(str)
+
+	rel_id = 42 if descriptions else 6
 
 	for Id in Id_list:
 
@@ -29,7 +31,7 @@ def ids_to_labels(Id_list, entity=True, language="en"):
 			
 			# Lookup URI in motherkb
 			mother_id = big.lookup_id(uri)
-			mother_label_ids = big.o(mother_id, 6)
+			mother_label_ids = big.o(mother_id, rel_id)
 
 			for label_id in mother_label_ids:
 				label = big.lookup_str(label_id).split("@")
@@ -42,17 +44,12 @@ def ids_to_labels(Id_list, entity=True, language="en"):
 		# Defaultdict defaults missing values to '' for (str).
 	return code_to_label
 
-entities = list(set().union(fb.all_s(), fb.all_o()))
-relations= fb.all_p()
 
-# Old function
-# e_id_to_english_label = np.vectorize(lambda Id: id_to_label(Id))
-# r_id_to_english_label = np.vectorize(lambda Id: id_to_label(Id, entity=False))
+entities = list(set().union(fb.all_s(), fb.all_o()))
 
 # This operation will need to be performed on batches for actual datasets
-with open("entity_labels.txt", "wb") as f:
-	pickle.dump(ids_to_labels(entities), f, protocol = pickle.HIGHEST_PROTOCOL)
+# with open("entity_labels.txt", "wb") as f:
+# 	pickle.dump(ids_to_labels(entities), f, protocol = pickle.HIGHEST_PROTOCOL)
 
-with open("relation_labels.txt", "wb") as f:
-	pickle.dump(ids_to_labels(relations, entity=False), f, protocol = pickle.HIGHEST_PROTOCOL)
-
+with open("entity_descriptions.txt", "wb") as f:
+	pickle.dump(ids_to_labels(entities, descriptions=True), f, protocol = pickle.HIGHEST_PROTOCOL)
