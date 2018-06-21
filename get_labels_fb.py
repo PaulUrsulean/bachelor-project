@@ -33,13 +33,20 @@ def ids_to_labels(Id_list, entity=True, language="en", descriptions=True):
 			mother_id = big.lookup_id(uri)
 			mother_label_ids = big.o(mother_id, rel_id)
 
+			found = []
+
 			for label_id in mother_label_ids:
 				label = big.lookup_str(label_id).split("@")
 				if len(label) < 2:
 					raise RuntimeError("Language delimiter not detected")
 				if label[1] == language:
-					code_to_label[pseudo] = label[0][1:-1]
-					break
+					found.append(label[0][1:-1])
+
+			# Sometimes multiple descriptions are found
+			# Choose the longest one
+			if found:
+				code_to_label[pseudo] = max(found, key=len)
+
 
 		# Insert nothing in the dict if nothing is found
 		# Defaultdict defaults missing values to '' for (str).
