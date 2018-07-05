@@ -31,8 +31,7 @@ def get_translation_rank(translation, target_index, entities, source_index=None)
 
 def get_rank(h, r, t, emb_h, emb_r, emb_t, i, forward=True):
 
-	# # # # # # # # # TransE # # # # # # # # #
-
+	# TransE
 	translation = emb_h[i] + emb_r[i]	if forward else emb_t[i] - emb_r[i]
 
 	distances 	= emb_t - translation 	if forward else emb_h - translation
@@ -42,13 +41,11 @@ def get_rank(h, r, t, emb_h, emb_r, emb_t, i, forward=True):
 	values 	= tf.reverse(values, [0])
 	indices	= tf.reverse(indices, [0])
 
-	# # # # # # # # # # # # # # # # # # # ## #
 
-	# # # # # # # # # Labels # # # # # # # # #
-
-
+	# Labels
 	label_values, label_indices = apply_model(h, r, t)
 
+	# Merging the two
 	avg_values, avg_indices = merge_rankings(indices, label_indices, i)
 
 
@@ -61,7 +58,10 @@ def apply_model(h, r, t):
 	fb = trident.Db("fb15k")
 	return [], tf.convert_to_tensor(np.random.permutation(batch_size), dtype=tf.int32)
 
-def merge_rankings(a, b, target_index, alpha = 1):
+def merge_rankings(a, b, target_index, alpha = 0.5):
+
+	a = tf.to_float(a)
+	b = tf.to_float(b)
 
 	alpha = tf.to_float(tf.convert_to_tensor(alpha))
 
@@ -69,13 +69,13 @@ def merge_rankings(a, b, target_index, alpha = 1):
 
 	ranks = tf.cast(tf.linspace(0., float(batch_size-1), batch_size), tf.float32)
 
-	ranks = tf.map_fn(lambda i: average_element(tf.to_float(a), tf.to_float(b), tf.to_float(i), alpha), ranks)
+	ranks = tf.map_fn(lambda i: average_element(a, b, i, alpha), ranks)
 
 	# for i in range(batch_size):
 	# 	a_i = tf.to_float(tf.where(tf.equal(a, i))[0][0])
 	# 	b_i = tf.to_float(tf.where(tf.equal(b, i))[0][0])
 
-	# 	merged.append()
+	# 	merged.append(tf.scalar_mul(alpha, a_i) + tf.scalar_mul(1-alpha, b_i))
 
 	# v, i = tf.nn.top_k(tf.stack(merged), batch_size)
 
@@ -88,7 +88,6 @@ def average_element(a, b, i, alpha):
 
 	a_i = tf.to_float(tf.where(tf.equal(a, i))[0][0])
 	b_i = tf.to_float(tf.where(tf.equal(b, i))[0][0])
-
 
 	return tf.scalar_mul(alpha, a_i) + tf.scalar_mul(1-alpha, b_i)
 
@@ -138,7 +137,6 @@ def get_mean_rank(model_dir, kb_dir, labels_rank_function=None, test_rel_id=None
 			rels 		= tf.convert_to_tensor(batch[1], tf.int64)
 			tails		= tf.convert_to_tensor(batch[2], tf.int64)
 
-		# # # # # # # # # TransE # # # # # # # # #
 
 		# Get embeddings for each relation element
 		heads_embedded	= tf.gather(emb_e, heads)
@@ -148,10 +146,6 @@ def get_mean_rank(model_dir, kb_dir, labels_rank_function=None, test_rel_id=None
 		# Determine translations and targets depending on the 'forward' boolean
 		translations_forward	= heads_embedded + rels_embedded
 		translations_backward	= tails_embedded - rels_embedded
-
-		# head + rel = tail
-		# head = tail - rel
-		# tail = head + rel
 
 		# Make a vector of indices
 		# Two different assignments so that ranks_forward and ranks_backward don't refer to the same object
@@ -169,13 +163,7 @@ def get_mean_rank(model_dir, kb_dir, labels_rank_function=None, test_rel_id=None
 		mean_rank_forward  	= tf.reduce_mean(tf.cast(ranks_forward, tf.float32))
 		mean_rank_backward 	= tf.reduce_mean(tf.cast(ranks_backward, tf.float32))
 
-		# # # # # # # # # # #    # # # # # # # # # #
-
-		# # # # # # # # # # Labels # # # # # # # # #
-
-
 		mean_rank_forward, mean_rank_backward = sess.run([mean_rank_forward, mean_rank_backward])
-		# mean_rank_forward = sess.run(mean_rank_forward)
 
 	return mean_rank_forward, mean_rank_backward
 
