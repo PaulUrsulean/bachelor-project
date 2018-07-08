@@ -1,9 +1,18 @@
 # Bag of words classifier with SVM
 
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.svm import SVR
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, median_absolute_error
+from sklearn.externals import joblib
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import FeatureUnion
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.model_selection import train_test_split
 
+
+import pandas as pd
 import trident
 import pickle
 import numpy as np
@@ -11,8 +20,7 @@ import nltk
 from collections import defaultdict
 from operator import itemgetter
 import scipy.sparse as sp
-from random import sample
-
+import random
 TRAINING_SET_PERCENTAGE = 0.9
 
 # IDEA:
@@ -52,105 +60,205 @@ with open("short_descriptions.txt", "rb") as f:
 fb = trident.Db("fb15k")
 d_get = np.vectorize(lambda index: short_desc[fb.lookup_str(index)])
 
+class TripleTransformer(BaseEstimator, TransformerMixin):
 
-def feature_vector(rel_id):
-	triples, negative_triples = generate_sets(rel_id)
+	def __init__(self, min_df=1, max_df=1.0):
+		self.vec = TfidfVectorizer(min_df=min_df, max_df=max_df)
 
+	def fit(self, x, y=None):
+
+		if x.shape[1] != 3:
+			raise ValueError("The input matrix does not contain 3 columns, and thus it is not a triple.")
+
+		self.vec.fit(np.unique(np.concatenate((x[:,0], x[:,2]))))
+		return self
+
+	def transform(self, x):
+
+		if x.shape[1] != 3:
+			raise ValueError("The input matrix does not contain 3 columns, and thus it is not a triple.")
+
+		return sp.hstack((self.vec.transform(x[:,0]), self.vec.transform(x[:,2])), format='csr')
+
+	def get_vectorizer(self):
+		return self.vec
+
+	# def fit_transform(self, x):
+	# 	return self.vec.fit(x).transform(x)
+
+
+
+
+def feature_vector(vectorizer, h, r, t):
+
+	return sp.hstack((vectorizer.transform(d_get(h)), vectorizer.transform(d_get(t))), format='csr')
+
+def get_model():
+	return joblib.load("model_svr.pkl"), joblib.load("vectorizer.pkl")
 
 # Creates a model based on triples received, attempts to make predictions
-def make_model(rel_id):
-
-	vectorizer = TfidfVectorizer()
-
-	triples, negative_triples = generate_sets(rel_id)
-
-	train_pos = triples[:int(len(triples)*TRAINING_SET_PERCENTAGE)]
-	train_neg = negative_triples[:int(len(negative_triples)*TRAINING_SET_PERCENTAGE)]
-
-	test_pos = triples[int(len(triples)*TRAINING_SET_PERCENTAGE):]
-	test_neg = negative_triples[int(len(negative_triples)*TRAINING_SET_PERCENTAGE):]
+def train(rel_id):
 
 
-	s = np.concatenate((train_pos[:,0], train_neg[:,0]), axis=0)
-	s_test = np.concatenate((test_pos[:,0], test_neg[:,0]), axis=0)
+	# triples, negative_triples = generate_sets(rel_id)
 
-	o = np.concatenate((train_pos[:,2], train_neg[:,2]), axis=0)
-	o_test = np.concatenate((test_pos[:,2], test_neg[:,2]), axis=0)
+	# train_pos = triples[:int(len(triples)*TRAINING_SET_PERCENTAGE)]
+	# train_neg = negative_triples[:int(len(negative_triples)*TRAINING_SET_PERCENTAGE)]
 
-	y = np.append(np.ones(len(train_pos)), np.zeros(len(train_neg)))
-	y_test = np.append(np.ones(len(test_pos)), np.zeros(len(test_neg)))
+	# test_pos = triples[int(len(triples)*TRAINING_SET_PERCENTAGE):]
+	# test_neg = negative_triples[int(len(negative_triples)*TRAINING_SET_PERCENTAGE):]
 
-	# print(len(train_pos), len(train_neg), len(test_pos), len(test_neg))
 
-	ents = d_get(np.unique(np.append(s, o)))
+	# s = np.concatenate((train_pos[:,0], train_neg[:,0]), axis=0)
+	# s_test = np.concatenate((test_pos[:,0], test_neg[:,0]), axis=0)
 
-	vectorizer.fit_transform(ents)
+	# o = np.concatenate((train_pos[:,2], train_neg[:,2]), axis=0)
+	# o_test = np.concatenate((test_pos[:,2], test_neg[:,2]), axis=0)
+
+	# y = np.append(np.ones(len(train_pos)), np.zeros(len(train_neg)))
+	# y_test = np.append(np.ones(len(test_pos)), np.zeros(len(test_neg)))
+
+	X, y = generate_sets(rel_id=0)
+
+	X_train, X_test, y_train, y_test = train_test_split(d_get(X), y, test_size=0.1)
+
+	X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1)
+
+
+
+	# X = d_get(np.stack((s, o), axis=1))
+	# X_test = d_get(np.stack((s_test, o_test), axis=1))
+
+	print(X_train.shape, X_test.shape, X_val.shape)
+
+	# vec = TripleTransformer()
+
+	# vec.fit(X)
+
+	# X_train = vec.transform(X_train)
+
+	pipe = Pipeline([('vectorizer', TripleTransformer(min_df=5)), ('estimator', SVR(gamma='auto'))])
+
+
+	pipe.fit(X_train, y_train)
+
+	y_pred = pipe.predict(X_test)
+
+	get_accuracy(y_test, y_pred)
+
+
+
+
+	# # Maybe don't use unique cause that fucks with the tfidf weighing?
+	# ents = d_get(np.unique(np.append(s, o)))
+
+	# # # This would be fine but only using unique entities like above
+	# # # yields better results.
+
+	# # ct = ColumnTransformer([
+	# # 	("tfidf0", TfidfVectorizer(min_df = 5), 0),
+	# # 	("tfidf1", TfidfVectorizer(min_df = 5), 1)
+	# # 	])
+
+	# # print(ct.fit_transform(d_get(np.stack((s, o), axis=1))).shape)
+	# # # features_test = c
+
+	# s = d_get(s)
+	# s_test = d_get(s_test)
+
+	# o = d_get(o)
+	# o_test = d_get(o_test)
+
+	# features = sp.hstack((vectorizer.transform(s), vectorizer.transform(o)), format='csr')
+	# features_test = sp.hstack((vectorizer.transform(s_test), vectorizer.transform(o_test)), format='csr')
+
+	# print(features.shape)
+
+	# svr = SVR().fit(features, y)
+
+	# y_pred = svr.predict(features_test)
+
+	# with open("vectorizer.pkl", "wb") as f:
+	# 	joblib.dump(vectorizer, f)
+
+	# with open("model_svr.pkl", "wb") as f:
+	# 	joblib.dump(svr, f)
+
+
+	# return mean_squared_error(y_test, y_pred), mean_squared_error(y_test, np.random.rand(len(y_pred), 1))
+
 	
-	# if n_rels > 1:
-	# 	pass
-	# 	# Create a feature vector that includes the relation
+def get_accuracy(y_test, y_pred):
 
-	# else:
-		# Create a feature vector that is just the unique 
-		# tokens of a sentence twice, one for each entity
-	s = d_get(s)
-	s_test = d_get(s_test)
+	y_guess = np.random.rand(len(y_test))
 
-	o = d_get(o)
-	o_test = d_get(o_test)
+	print("\nEstimator r2:", r2_score(y_test, y_pred))
+	print("Baseline  r2:", r2_score(y_test, y_guess))
 
-	rel = sp.csr_matrix(np.ones([len(s), 1])*rel_id)
-	rel_test = sp.csr_matrix(np.ones([len(s_test), 1])*rel_id)
+	print("\nEstimator MAE:", mean_absolute_error(y_test, y_pred))
+	print("Baseline  MAE:", mean_absolute_error(y_test, y_guess))
 
-	features = sp.hstack((rel, vectorizer.transform(s), vectorizer.transform(o)), format='csr')
-	features_test = sp.hstack((rel_test, vectorizer.transform(s_test), vectorizer.transform(o_test)), format='csr')
+	print("\nEstimator MSE:", mean_squared_error(y_test, y_pred))
+	print("Baseline  MSE:", mean_squared_error(y_test, y_guess))
 
-	svr = SVR()
+	print("\nEstimator Median Absolute Error", median_absolute_error(y_test, y_pred))
+	print("Baseline  Median Absolute Error", median_absolute_error(y_test, y_guess))
 
-	y_pred = svr.fit(features, y).predict(features_test)
-
-
-	return mean_squared_error(y_test, y_pred), mean_squared_error(y_test, np.random.rand(len(y_pred), 1))
-
-
-	# print(features.shape, y.shape)
-	# print(features_test.shape, y_test.shape)
-	
 def generate_sets(rel_id):
-	positive = np.asarray(fb.os(rel_id))
-	positive = [(tup[0], rel_id, tup[1]) for tup in positive]
+	positive = [(tup[0], rel_id, tup[1]) for tup in fb.os(rel_id)]
 
 	all_set = set(fb.all())
+	diff_set = all_set.difference(set(positive))
 
-	negative = sample(all_set.difference(set(positive)), fb.count_p(rel_id))
+	# negative = np.empty([len(positive),3])
 
-	return np.asarray(positive), np.asarray(negative)
+	negative = random.sample(diff_set, len(positive))
 
-# make_model(0)
-real, baseline = make_model(0)
+	for i in range(len(negative)):
+		while fb.exists(negative[i][0], rel_id, negative[i][2]):
+			negative[i] = random.sample(diff_set, 1)[0]
 
-print("The mean squared error for our estimator:", real)
-print("The baseline mean squared error for a guessing estimator:", baseline)
+	# for i in range(len(positive)):
+
+	# 	print(i)
+	# 	sample = random.sample(diff_set, 1)[0]
+	# 	if not fb.exists(sample[0], rel_id, sample[2]):
+	# 		negative[i] = sample
 
 
+	# # while i < len(positive):
 
-# # Cleaning up descriptions, extracting the first sentence from each, writing to file
+	# # 	print(len(negative))
+	# # 	sample = random.sample(diff_set, 1)[0]
 
-# short_desc = defaultdict(str)
+	# # 	if not fb.exists(sample[0], rel_id, sample[2]):
+	# # 		negative.append(sample)
 
-# for key in list(desc.keys()):
+	# positive = np.concatenate((np.asarray(positive), np.ones((len(positive), 1), np.int64)), axis=1)
+	# negative = np.concatenate((np.asarray(negative), np.zeros((len(negative), 1), np.int64)), axis=1)
 
-# 	corrected = desc[key].replace("\\n", " ").replace("\\r", " ").replace("\\t", " ").replace('\\"', '"').replace("\\", "")
+	# pos_neg = np.concatenate((positive, negative))
 
-# 	sentence = nltk.sent_tokenize(corrected)
+	# np.random.shuffle(pos_neg)
 
-# 	short_desc[key] = sentence[0]
+	return np.concatenate((positive, negative)), np.append(np.ones(len(positive)), np.zeros(len(negative)))
 
-# 	if len(sentence[0]) <= 40 and " is " not in sentence[0] and " was " not in sentence[0] and " are " not in sentence[0] and " were " not in sentence[0]:
-# 		short_desc[key] += sentence[1]
 
-# 		if len(sentence[1]) < 5:
-# 			short_desc[key] += sentence[2]
+	# print(pos_neg)
+	# Return X, y
+	# return pos_neg[:,:3], pos_neg[:,3:]
 
-# with open("short_descriptions.txt", "wb") as f:
-# 	pickle.dump(short_desc, f, protocol = pickle.HIGHEST_PROTOCOL)
+def tuples_consistent(rel_id, tuples, answers):
+	for i in range(len(tuples)):
+		if not fb.exists(tuples[i][0], rel_id, tuples[i][2]) == bool(answers[i]):
+			return False
+
+	return True
+
+
+train(0)
+# real, baseline = train(0)
+
+# print("The mean squared error for our estimator:", real)
+# print("The baseline mean squared error for a guessing estimator:", baseline)
+
