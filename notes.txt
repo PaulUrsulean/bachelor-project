@@ -1,0 +1,36 @@
+	# param_grid = [
+	# 	{
+	# 		'vectorizer__min_df': [1, 0.0005, 0.001, 0.002],
+	# 		'vectorizer__unique': [True, False],
+	# 		'vectorizer__max_df': [0.0008, 0.0016, 0.0016, 0.0032, 0.0064],
+	# 		'estimator__kernel': ['rbf', 'linear', 'poly']
+	# 	}
+	# ]
+
+	# search = GridSearchCV(Pipeline([('vectorizer', TripleTransformer()), ('estimator', SVR(gamma='auto'))]), param_grid)
+	# search.fit(X_val, y_val)
+	# print("Best parameters:", search.best_params_)
+	# print("R2 score:", search.best_score_)
+
+	# Best parameters: {'estimator__kernel': 'linear', 
+	# 'vectorizer__max_df': 0.0008, 
+	# 'vectorizer__min_df': 1, 
+	# 'vectorizer__unique': True}
+	# R2 score: 0.8968628379691698
+
+	# random_param_grid = {
+	# 	'vectorizer__min_df': uniform(loc=0, scale=0.5),
+	# 	'vectorizer__max_df': uniform(loc=0.5, scale=0.5),
+	# 	'estimator__kernel': ['rbf', 'linear', 'poly']
+	# }
+
+	# pipe = Pipeline([('vectorizer', TripleTransformer()), ('estimator', SVR(gamma='auto'))])
+
+	# search = RandomizedSearchCV(pipe, random_param_grid, cv=4)
+
+	# search.fit(X_val, y_val)
+	# print("Best parameters:", search.best_params_)
+	# print("R2 score:", search.best_score_)
+
+	Best parameters: {'estimator__kernel': 'linear', 'vectorizer__max_df': 0.6783292560120808, 'vectorizer__min_df': 0.13478528733776624}
+	R2 score: 0.9103699413006693

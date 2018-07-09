@@ -1,16 +1,14 @@
 # Bag of words classifier with SVM
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.svm import SVR
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, median_absolute_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, median_absolute_error, explained_variance_score
 from sklearn.externals import joblib
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import FeatureUnion
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.model_selection import train_test_split
-
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
 
 import pandas as pd
 import trident
@@ -20,6 +18,7 @@ import nltk
 from collections import defaultdict
 from operator import itemgetter
 import scipy.sparse as sp
+from scipy.stats import uniform
 import random
 TRAINING_SET_PERCENTAGE = 0.9
 
@@ -48,29 +47,42 @@ TRAINING_SET_PERCENTAGE = 0.9
 # Focus on combining with TransE first
 
 
-with open("entity_labels.txt", "rb") as f:
-	labels = pickle.load(f)
+# with open("entity_labels.txt", "rb") as f:
+# 	labels = pickle.load(f)
 
-with open("entity_descriptions.txt", "rb") as f:
-	desc = pickle.load(f)
+# with open("entity_descriptions.txt", "rb") as f:
+# 	desc = pickle.load(f)
 
-with open("short_descriptions.txt", "rb") as f:
-	short_desc = pickle.load(f)
+# with open("short_descriptions.txt", "rb") as f:
+# 	short_desc = pickle.load(f)
 
-fb = trident.Db("fb15k")
-d_get = np.vectorize(lambda index: short_desc[fb.lookup_str(index)])
+# d_get = np.vectorize(lambda index: short_desc[fb.lookup_str(index)])
 
 class TripleTransformer(BaseEstimator, TransformerMixin):
 
-	def __init__(self, min_df=1, max_df=1.0):
-		self.vec = TfidfVectorizer(min_df=min_df, max_df=max_df)
+	def __init__(self, min_df=1, max_df=1.0, unique=True):
+		self.min_df = min_df
+		self.max_df = max_df
+		self.unique = unique
+
+		with open("short_descriptions.txt", "rb") as f:
+			short_desc = pickle.load(f)
+
+		fb = trident.Db("fb15k")
+		self.get_desc = np.vectorize(lambda index: short_desc[fb.lookup_str(index)])
+
+		self.vec = TfidfVectorizer(min_df=self.min_df, max_df=self.max_df)
 
 	def fit(self, x, y=None):
 
 		if x.shape[1] != 3:
 			raise ValueError("The input matrix does not contain 3 columns, and thus it is not a triple.")
 
-		self.vec.fit(np.unique(np.concatenate((x[:,0], x[:,2]))))
+		docs = np.unique(np.concatenate((x[:,0], x[:,2]))) if self.unique else np.concatenate((x[:,0], x[:,2]))
+
+		# print(len(docs))
+
+		self.vec.fit(self.get_desc(docs))
 		return self
 
 	def transform(self, x):
@@ -78,7 +90,7 @@ class TripleTransformer(BaseEstimator, TransformerMixin):
 		if x.shape[1] != 3:
 			raise ValueError("The input matrix does not contain 3 columns, and thus it is not a triple.")
 
-		return sp.hstack((self.vec.transform(x[:,0]), self.vec.transform(x[:,2])), format='csr')
+		return sp.hstack((self.vec.transform(self.get_desc(x[:,0])), self.vec.transform(self.get_desc(x[:,2]))), format='csr')
 
 	def get_vectorizer(self):
 		return self.vec
@@ -88,7 +100,7 @@ class TripleTransformer(BaseEstimator, TransformerMixin):
 
 
 
-
+# NEED TO DEPRECATE
 def feature_vector(vectorizer, h, r, t):
 
 	return sp.hstack((vectorizer.transform(d_get(h)), vectorizer.transform(d_get(t))), format='csr')
@@ -120,16 +132,14 @@ def train(rel_id):
 
 	X, y = generate_sets(rel_id=0)
 
-	X_train, X_test, y_train, y_test = train_test_split(d_get(X), y, test_size=0.1)
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
 
-	X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1)
+	_, X_val, _, y_val = train_test_split(X_train, y_train, test_size=0.4)
 
 
 
 	# X = d_get(np.stack((s, o), axis=1))
 	# X_test = d_get(np.stack((s_test, o_test), axis=1))
-
-	print(X_train.shape, X_test.shape, X_val.shape)
 
 	# vec = TripleTransformer()
 
@@ -137,12 +147,14 @@ def train(rel_id):
 
 	# X_train = vec.transform(X_train)
 
-	pipe = Pipeline([('vectorizer', TripleTransformer(min_df=5)), ('estimator', SVR(gamma='auto'))])
+	pipe1 = Pipeline([('vectorizer', TripleTransformer(min_df=0.0005)), ('estimator', SVR(gamma='auto'))])
+	pipe2 = Pipeline([('vectorizer', TripleTransformer(max_df=0.0008)), ('estimator', SVR(gamma='auto', kernel='linear'))])
+	pipe3 = Pipeline([('vectorizer', TripleTransformer(min_df=0.13478528733776624, max_df = 0.6783292560120808)), ('estimator', SVR(gamma='auto', kernel='linear'))])
 
 
-	pipe.fit(X_train, y_train)
+	pipe1.fit(X_train, y_train)
 
-	y_pred = pipe.predict(X_test)
+	y_pred = pipe1.predict(X_test)
 
 	get_accuracy(y_test, y_pred)
 
@@ -195,6 +207,9 @@ def get_accuracy(y_test, y_pred):
 	print("\nEstimator r2:", r2_score(y_test, y_pred))
 	print("Baseline  r2:", r2_score(y_test, y_guess))
 
+	print("\nEstimator EVS:", explained_variance_score(y_test, y_pred))
+	print("Baseline  EVS:", explained_variance_score(y_test, y_guess))
+
 	print("\nEstimator MAE:", mean_absolute_error(y_test, y_pred))
 	print("Baseline  MAE:", mean_absolute_error(y_test, y_guess))
 
@@ -204,7 +219,12 @@ def get_accuracy(y_test, y_pred):
 	print("\nEstimator Median Absolute Error", median_absolute_error(y_test, y_pred))
 	print("Baseline  Median Absolute Error", median_absolute_error(y_test, y_guess))
 
+	print("")
+
 def generate_sets(rel_id):
+	
+	fb = trident.Db("fb15k")
+
 	positive = [(tup[0], rel_id, tup[1]) for tup in fb.os(rel_id)]
 
 	all_set = set(fb.all())
@@ -249,6 +269,9 @@ def generate_sets(rel_id):
 	# return pos_neg[:,:3], pos_neg[:,3:]
 
 def tuples_consistent(rel_id, tuples, answers):
+	
+	fb = trident.Db("fb15k")
+
 	for i in range(len(tuples)):
 		if not fb.exists(tuples[i][0], rel_id, tuples[i][2]) == bool(answers[i]):
 			return False
@@ -256,7 +279,7 @@ def tuples_consistent(rel_id, tuples, answers):
 	return True
 
 
-train(0)
+train(5)
 # real, baseline = train(0)
 
 # print("The mean squared error for our estimator:", real)
