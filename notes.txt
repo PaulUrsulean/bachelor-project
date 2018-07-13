@@ -1,3 +1,69 @@
+def generate_sets(rel_ids, random_negatives=False):
+
+	if isinstance(rel_ids, int):
+		rel_ids = [rel_ids]
+	elif not isinstance(rel_ids, list):
+		return
+	
+	fb = trident.Db("fb15k")
+
+
+	X = np.empty([0,3])
+	y = np.empty([0,1])
+
+	entities = set(fb.all_s()).union(set(fb.all_o())), len(corrupted_heads)
+	all_set = set(fb.all())
+	diff_set = all_set.difference(set(positive))
+
+	for rel_id in rel_ids:
+
+		positive = [(tup[0], rel_id, tup[1]) for tup in fb.os(rel_id)]	
+
+		# negative = np.empty([len(positive),3])
+
+		if random_negatives:
+			corrupted_heads = np.asarray(positive)
+			corrupted_tails = np.asarray(positive)
+
+			corrupted_heads[:,0] = random.sample(entities)
+			corrupted_tails[:,2] = random.sample(entities)
+
+			for i in range(len(corrupted_heads)):
+				while fb.exists(corrupted_heads[i][0], rel_id, corrupted_heads[i][2])
+
+
+		# negative = np.asarray(random.sample(diff_set, len(positive)))
+		# negative[:,1] = [rel_id]*len(negative)
+
+		negative = np.append(corrupted_heads, corrupted_tails, axis=0)
+
+		additional = 0
+
+		for i in range(len(negative)):
+			while fb.exists(negative[i][0], negative[i][1], negative[i][2]):
+
+				# if random_negatives:
+				# 	# negative[i] = [random.sample(diff_set, 1)[0][0], rel_id, random.sample(diff_set, 1)[0][2]]
+				# 	negative[i] = [random.sample(positive, 1)[0][0], rel_id, random.sample(diff_set, 1)[0][2]]
+
+				neg_sample = random.sample(diff_set, 1)[0]
+				negative[i] = neg_sample
+
+				additional += 1
+
+				print(additional)
+
+				# if random_negatives:
+				# 	negative[i] = 
+				# else:
+				# 	negative[i] = [neg_sample[0], rel_id, neg_sample[2]]
+
+		print(additional)	
+
+
+
+
+
 	# param_grid = [
 	# 	{
 	# 		'vectorizer__min_df': [1, 0.0005, 0.001, 0.002],
