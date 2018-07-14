@@ -1,5 +1,5 @@
 # Bag of words classifier with SVM
-
+import sys
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, median_absolute_error, explained_variance_score
@@ -26,6 +26,9 @@ import time
 
 fb = trident.Db("fb15k")
 
+r2 = []
+mederr = []
+weights = []
 
 # NEED TO DEPRECATE
 def feature_vector(vectorizer, h, r, t):
@@ -37,9 +40,20 @@ def get_model():
 # Creates a model based on triples received, attempts to make predictions
 def train(rel_id):
 
+	n_triples = fb.count_p(rel_id)
+
+	TEST_SPLIT = 0.1
+
+	if n_triples < 10:
+		TEST_SPLIT = 0.4
+		if n_triples <=6:
+			TEST_SPLIT = 0.5
+			if n_triples == 1:
+				TEST_SPLIT=0
+
 	X, y = generate_sets(rel_id)
 
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SPLIT)
 
 	_, X_val, _, y_val = train_test_split(X_train, y_train, test_size=0.4)
 
@@ -49,19 +63,18 @@ def train(rel_id):
 	# pipe = Pipeline([('vectorizer', TripleTransformer(min_df=0.13478528733776624, max_df = 0.6783292560120808)), ('estimator', SVR(gamma='auto', kernel='linear'))])
 
 	# print(X_train.shape)
+
 	pipe.fit(X_train, y_train)
 
-	y_pred = pipe.predict(X_test)
+	with open("./rel_models/" + str(rel_id) + ".pkl", "wb") as f:
+		joblib.dump([pipe.named_steps['vectorizer'].get_vectorizer(), pipe.named_steps['estimator']], f)
 
-
-
-	with open("vectorizer.pkl", "wb") as f:
-		joblib.dump(pipe.named_steps['vectorizer'].get_vectorizer(), f)
-
-	with open("model.pkl", "wb") as f:
-		joblib.dump(pipe.named_steps['estimator'], f)
-
-	return get_accuracy(y_test, y_pred)
+	if n_triples > 1:
+		y_pred = pipe.predict(X_test)
+		r,m = get_accuracy(y_test, y_pred)
+		r2.append(r)
+		mederr.append(m)
+		weights.append(n_triples)
 	
 
 	
@@ -140,7 +153,8 @@ def generate_relset(rel_id, use_corrupted, percentage):
 
 def generate_sets(rel_ids, use_corrupted=False, percentage=1.):
 
-	if isinstance(rel_ids, int):
+
+	if isinstance(rel_ids, int) or isinstance(rel_ids, np.int64) or isinstance(rel_ids, np.int32):
 		rel_ids = [rel_ids]
 
 	elif not isinstance(rel_ids, list) and not isinstance(rel_ids, np.ndarray):
@@ -169,10 +183,32 @@ def tuples_consistent(tuples, answers):
 
 # ids = [i for i in random.sample(range(fb.n_relations()), 20) if fb.count_p(i) > 100 and fb.count_p(i) < 5000]
 
-start = time.time()
-r2, mederr = train(0)
-print("r2: {}\nmederr: {}".format(r2, mederr))
-print("Execution time:", time.time() - start)
+# errors = []
+
+# train(0)
+
+startall = time.time()
+
+for i in np.unique(fb.all_p()):
+	try:
+		print("Training relation",i)
+		start = time.time()
+		train(i)
+
+		print("Done. Execution time:", time.time() - start)
+	except:
+		print("\nERROR AT RELATION ID", i)
+		print(sys.exc_info()[0])
+		raise
+		sys.exit()
+		errors.append(i)
+
+if errors != []:
+	with open("errors.pkl", "wb") as f:
+		joblib.dump(errors, f)
+
+
+
 
 
 # a = []
@@ -184,8 +220,9 @@ print("Execution time:", time.time() - start)
 # 	b.append(d)
 # 	weights.append(fb.count_p(i))
 
-# weights = np.asarray(weights)
-# weights = weights/weights.max()
+weights = np.asarray(weights)
+weights = weights/weights.max()
 
-# print(np.average(a, weights=weights), np.average(b, weights=weights))
+print("Average r2:",np.average(r2, weights=weights), "\nAverge median error:", np.average(mederr, weights=weights))
 
+print("Total execution time:", time.time() - startall)

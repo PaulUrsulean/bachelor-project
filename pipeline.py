@@ -13,6 +13,8 @@ import time
 
 # import train_bow as bow
 
+top_n = 1000
+
 def get_relations(kb_dir, rel_ids=None):
 
 	if isinstance(rel_ids, int):
@@ -52,6 +54,10 @@ def get_relations(kb_dir, rel_ids=None):
 
 		batch = batcher.getbatch()
 
+	global top_n
+	if top_n > len(heads):
+		top_n = len(heads)
+
 
 	return heads.astype(np.int64), rels.astype(np.int64), tails.astype(np.int64)
 
@@ -68,20 +74,16 @@ def get_mean_rank(model_dir, kb_dir, rel_ids=None):
 
 		heads, rels, tails = get_relations(kb_dir, rel_ids)
 
+		X = np.column_stack((heads, rels, tails))
+
 		n = len(heads)
 		if n == 0:
 			return
 
-
-		# Separate subjects, predicates, objects, convert to tensors.
-		t_heads		 = tf.convert_to_tensor(heads, tf.int64)
-		t_rels 		 = tf.convert_to_tensor(rels, tf.int64)
-		t_tails		 = tf.convert_to_tensor(tails, tf.int64)
-
 		# Get embeddings for each relation element
-		heads_embedded	= tf.gather(emb_e, t_heads)
-		rels_embedded	= tf.gather(emb_r, t_rels)
-		tails_embedded	= tf.gather(emb_e, t_tails)
+		heads_embedded	= tf.gather(emb_e, heads)
+		rels_embedded	= tf.gather(emb_r, rels)
+		tails_embedded	= tf.gather(emb_e, tails)
 
 		# Determine translations and targets depending on the 'forward' boolean
 		translations_forward	= heads_embedded + rels_embedded
@@ -100,8 +102,10 @@ def get_mean_rank(model_dir, kb_dir, rel_ids=None):
 		ranks_backward 	= tf.map_fn(lambda index: get_rank(heads, rels, tails, heads_embedded, rels_embedded, tails_embedded, index, False), ranks_backward)
 
 		# Get mean rank
-		mean_rank_forward  	= tf.reduce_mean(tf.cast(ranks_forward, tf.float32))
-		mean_rank_backward 	= tf.reduce_mean(tf.cast(ranks_backward, tf.float32))
+		mean_rank_forward  	= tf.reduce_mean(ranks_forward)
+		mean_rank_backward 	= tf.reduce_mean(ranks_backward)
+
+		# ranks_forward, ranks_backward = sess.run([ranks_forward, ranks_backward])
 
 		mean_rank_forward, mean_rank_backward = sess.run([mean_rank_forward, mean_rank_backward])
 
@@ -113,6 +117,9 @@ def get_mean_rank(model_dir, kb_dir, rel_ids=None):
 		# for i in range(len(a)-1):
 		# 	print(np.all(a[i].argsort() == a[i+1].argsort()))
 
+	# label_ranks_f, label_ranks_b = rank_labels(X)
+
+	# return [ranks_forward, label_ranks_f], [ranks_backward, label_ranks_b]
 
 	return mean_rank_forward, mean_rank_backward
 
@@ -120,7 +127,7 @@ def get_mean_rank(model_dir, kb_dir, rel_ids=None):
 
 # Computes the rank of a translation head+rel, by checking how close
 # the vector is to the actual target, in comparison with other embeddings.
-def get_translation_rank(translation, target_index, entities, source_index=None):
+def get_translation_rank(translation, target_index, entities):
 
 	distances = tf.norm(entities-translation, ord=1, axis=1)
 
@@ -134,51 +141,38 @@ def get_translation_rank(translation, target_index, entities, source_index=None)
 	indices = tf.reverse(indices, [0])
 	rank = tf.where(tf.equal(indices, target_index))
 
-	if source_index is not None:
-		return values, indices
-
 	return tf.cast(rank[0][0], tf.int32)
 
-def get_rank(h, r, t, emb_h, emb_r, emb_t, i, forward=True, alpha=1):
+pipe = Pipeline([('vectorizer', TripleTransformer(vectorizer=joblib.load("vectorizer.pkl"))), ('estimator', joblib.load("model.pkl"))])
 
-	# Cast index i to an int. It is originally of type float because it may be replaced
-	# with a float by the tf.map_fn function, wherein types need to match
-	i = tf.cast(i, tf.int32)
+def rank_labels(X):
+	forward = np.empty([1, len(X)], np.int32)
+	back 	= np.empty([1, len(X)], np.int32)
 
-	# TransE
-	translation = emb_h[i] + emb_r[i]	if forward else emb_t[i] - emb_r[i]
+	forward[0,:] 	= np.linspace(0, len(X)-1, len(X), dtype=np.int32)
+	back[0,:]		= np.linspace(0, len(X)-1, len(X), dtype=np.int32)
 
-	distances 	= emb_t - translation 	if forward else emb_h - translation
-	distances	= tf.norm(distances, ord=1, axis=1)
+	forward = np.apply_along_axis(lambda i: rank_single(X, i, True), 0, forward)
+	back 	= np.apply_along_axis(lambda i: rank_single(X, i, False), 0, back)
 
-	values, indices = tf.nn.top_k(distances, tf.size(distances))
-	values 	= tf.reverse(values, [0])
-	indices	= tf.reverse(indices, [0])
+	return forward, back
 
+def rank_single(X, i, forward=True):
 
+	X[:,1] = X[i,1]
 
-	# Labels
-	pipe = Pipeline([('vectorizer', TripleTransformer(vectorizer=joblib.load("vectorizer.pkl"))), ('estimator', joblib.load("model.pkl"))])
-
-	label_values, label_indices = apply_model(h, r, t, i, forward, alpha, pipe)
-
-	if alpha != 1:
-		return tf.cast(tf.where(tf.equal(label_indices, i))[0][0], tf.float32)
+	if forward:
+		X[:,0] = X[i,0]
 	else:
-		return tf.cast(tf.where(tf.equal(indices, i))[0][0], tf.float32)
+		X[:,2] = X[i,2]
 
+	where = np.where(np.argsort(pipe.predict(X))[::-1] == i)
 
-	# Merging the two
-	avg_values, avg_indices = merge_rankings(indices, label_indices, i, alpha)
-
-	# return avg_indices
-
-	rank = tf.where(tf.equal(avg_indices, i))
-	return tf.cast(rank[0][0], tf.int32)
+	return where[0][0]
 
 
 
-def apply_model(h, r, t, i, forward, alpha, predictor):
+def apply_model(h, r, t, i, forward, alpha):
 
 	if alpha==1:
 		return None, None
@@ -187,13 +181,13 @@ def apply_model(h, r, t, i, forward, alpha, predictor):
 	if forward:
 
 		# POSSIBLE THAT I DID IT WRONG HERE
-		fun = lambda i: pipe.predict(np.asarray([np.repeat(h[i], len(h)), np.repeat(r[i], len(r)), t], np.int64).transpose())
+		fun = lambda i: pipe.predict(np.column_stack((np.repeat(h[i], len(h)), np.repeat(r[i], len(r)), t)))
 
 		# fun = lambda i: pipe.predict(np.asarray([h, r, [t[i]] * len(t)], np.int64).transpose())
 
 	else:
 
-		fun = lambda i: pipe.predict(np.asarray([h, np.repeat(r[i], len(r)), np.repeat(t[i], len(t))], np.int64).transpose())
+		fun = lambda i: pipe.predict(np.column_stack((h, np.repeat(r[i], len(r)), np.repeat(t[i], len(t)))))
 
 	predicted = tf.py_func(fun, [i], tf.float64)
 	# return predicted
@@ -250,30 +244,58 @@ def average_element(a, b, i, alpha):
 
 	return c_i
 
+def get_rank(h, r, t, emb_h, emb_r, emb_t, i, forward=True, alpha=0.9):
+
+	# Cast index i to an int. It is originally of type float because it may be replaced
+	# with a float by the tf.map_fn function, wherein types need to match
+	i = tf.cast(i, tf.int32)
+
+	# TransE
+	translation = emb_h[i] + emb_r[i]	if forward else emb_t[i] - emb_r[i]
+
+	distances 	= emb_t - translation 	if forward else emb_h - translation
+	distances	= tf.norm(distances, ord=1, axis=1)
+
+	values, indices = tf.nn.top_k(distances, tf.size(distances))
+	values 	= tf.reverse(values, [0])
+	indices	= tf.reverse(indices, [0])
+
+
+
+	# Labels
+
+	label_values, label_indices = apply_model(h, r, t, i, forward, alpha)
+
+	if alpha != 1:
+		return tf.cast(tf.where(tf.equal(label_indices, i))[0][0], tf.float32)
+	else:
+		return tf.cast(tf.where(tf.equal(indices, i))[0][0], tf.float32)
+
+
+	# Merging the two
+	avg_values, avg_indices = merge_rankings(indices, label_indices, i, alpha)
+
+	# return avg_indices
+
+	rank = tf.where(tf.equal(avg_indices, i))
+	return tf.cast(rank[0][0], tf.int32)
 
 
 
 
 
-# print(get_mean_rank("./models_fb", "./fb15k", 0))
-
-# TO DO:
-
-# TRY TransE on lubm1, both random and same relation
-# Do the comparison on all entities, not just 50
-
-# f, b = get_mean_rank("./models", "./lubm1", 3)
-# print("The mean rank forward is: {}\nThe mean rank backward is: {}".format(f, b))
-
-# When taking IDS, I think i'm comparing only to the list of IDs, not whole set of rels.
 
 start = time.time()
 
 # get_mean_rank("./models_fb", "./fb15k", ids)
-f, b = get_mean_rank("./models_fb", "./fb15k", 0)
-print("The mean rank forward is: {}\nThe mean rank backward is: {}".format(f, b))
+f, b = get_mean_rank("./models_fb", "./fb15k", 19)
+print("TransE forward rank: {}\nTransE backward rank: {}".format(f, b))
+# print("Labels forward rank: {}\nLabels backward rank: {}".format(np.mean(f[1]), np.mean(b[1])))
+
 
 print("Execution time:", time.time() - start)
+
+
 
 
 
