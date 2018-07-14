@@ -183,46 +183,46 @@ def tuples_consistent(tuples, answers):
 
 # ids = [i for i in random.sample(range(fb.n_relations()), 20) if fb.count_p(i) > 100 and fb.count_p(i) < 5000]
 
-# errors = []
 
-# train(0)
-
-startall = time.time()
-
-for i in np.unique(fb.all_p()):
-	try:
-		print("Training relation",i)
-		start = time.time()
-		train(i)
-
-		print("Done. Execution time:", time.time() - start)
-	except:
-		print("\nERROR AT RELATION ID", i)
-		print(sys.exc_info()[0])
-		raise
-		sys.exit()
-		errors.append(i)
-
-if errors != []:
-	with open("errors.pkl", "wb") as f:
-		joblib.dump(errors, f)
+# startall = time.time()
 
 
 
+# for i in joblib.load("errors.pkl"):
+# 	try:
+# 		print("Training relation",i)
+# 		start = time.time()
+# 		train(i)
+
+# 		print("Done. Execution time:", time.time() - start)
+# 	except:
+# 		print("\nERROR AT RELATION ID", i)
+# 		errors.append(i)
+
+# if errors != []:
+# 	with open("errors.pkl", "wb") as f:
+# 		joblib.dump(errors, f)
+
+# while len(joblib.load("errors.pkl")) > 0:
+# 	errors = []
+# 	for i in joblib.load("errors.pkl"):
+# 		try:
+# 			print("Training relation",i)
+# 			start = time.time()
+# 			train(i)
+
+# 			print("Done. Execution time:", time.time() - start)
+# 		except:
+# 			print("\nERROR AT RELATION ID", i)
+# 			errors.append(i)
+
+# 	with open("errors.pkl", "wb") as f:
+# 		joblib.dump(errors, f)
 
 
-# a = []
-# b = []
-# weights = []
-# for i in ids:
-# 	c, d = train(i)
-# 	a.append(c)
-# 	b.append(d)
-# 	weights.append(fb.count_p(i))
+# weights = np.asarray(weights)
+# weights = weights/weights.max()
 
-weights = np.asarray(weights)
-weights = weights/weights.max()
+# print("Average r2:",np.average(r2, weights=weights), "\nAverge median error:", np.average(mederr, weights=weights))
 
-print("Average r2:",np.average(r2, weights=weights), "\nAverge median error:", np.average(mederr, weights=weights))
-
-print("Total execution time:", time.time() - startall)
+# print("Total execution time:", time.time() - startall)
