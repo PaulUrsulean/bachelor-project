@@ -38,7 +38,7 @@ def get_model():
 	return joblib.load("pipe.pkl")
 
 # Creates a model based on triples received, attempts to make predictions
-def train(rel_id):
+def train(rel_id, use_corrupted=False):
 
 	n_triples = fb.count_p(rel_id)
 
@@ -51,30 +51,40 @@ def train(rel_id):
 			if n_triples == 1:
 				TEST_SPLIT=0
 
-	X, y = generate_sets(rel_id)
+	X, y = generate_sets(rel_id, use_corrupted)
 
 	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SPLIT)
+
+	n_docs = np.unique(np.concatenate((X_train[:,0], X_train[:,2]))).size
 
 	_, X_val, _, y_val = train_test_split(X_train, y_train, test_size=0.4)
 
 
-	# pipe = Pipeline([('vectorizer', TripleTransformer(min_df=0.0005)), ('estimator', SVR(gamma='auto'))])
-	pipe = Pipeline([('vectorizer', TripleTransformer(min_df = 0.002)), ('estimator', SVR(gamma='auto', kernel='linear'))])
+	pipe = Pipeline([('vectorizer', TripleTransformer(min_df=0.0005)), ('estimator', SVR(gamma='auto'))])
+	# pipe = Pipeline([('vectorizer', TripleTransformer(min_df = 0.002, max_df = (0.008 if int(0.008*n_docs) >= 8 else 8))), ('estimator', SVR(gamma='auto', kernel='linear'))])
 	# pipe = Pipeline([('vectorizer', TripleTransformer(min_df=0.13478528733776624, max_df = 0.6783292560120808)), ('estimator', SVR(gamma='auto', kernel='linear'))])
 
 	# print(X_train.shape)
 
 	pipe.fit(X_train, y_train)
 
-	with open("./rel_models/" + str(rel_id) + ".pkl", "wb") as f:
+	# with open("./rel_models/" + str(rel_id) + ".pkl", "wb") as f:
+	with open("pipe.pkl", "wb") as f:
 		joblib.dump([pipe.named_steps['vectorizer'].get_vectorizer(), pipe.named_steps['estimator']], f)
+
+	# with open("vectorizer.pkl", "wb") as f:
+	# 	joblib.dump(pipe.named_steps['vectorizer'].get_vectorizer(), f)
+
+	# with open("model.pkl", "wb") as f:
+	# 	joblib.dump(pipe.named_steps['estimator'], f)
 
 	if n_triples > 1:
 		y_pred = pipe.predict(X_test)
 		r,m = get_accuracy(y_test, y_pred)
-		r2.append(r)
-		mederr.append(m)
-		weights.append(n_triples)
+		print("R2: {}\nMederr: {}".format(r,m))
+		# r2.append(r)
+		# mederr.append(m)
+		# weights.append(n_triples)
 	
 
 	
@@ -116,9 +126,6 @@ def generate_relset(rel_id, use_corrupted, percentage):
 
 	# I know this is ugly
 	if use_corrupted and len(positive) > 1:
-
-		permute = np.random.permutation(positive)
-		thresh  = int(len(permute)/2)
 
 		corr_heads = np.asarray(positive)
 		corr_tails = np.asarray(positive)
@@ -184,9 +191,11 @@ def tuples_consistent(tuples, answers):
 # ids = [i for i in random.sample(range(fb.n_relations()), 20) if fb.count_p(i) > 100 and fb.count_p(i) < 5000]
 
 
-# startall = time.time()
+startall = time.time()
 
-
+train(0, False)
+# a,b = generate_sets(3, True)
+# print(a.shape, b.shape)
 
 # for i in joblib.load("errors.pkl"):
 # 	try:
@@ -225,4 +234,4 @@ def tuples_consistent(tuples, answers):
 
 # print("Average r2:",np.average(r2, weights=weights), "\nAverge median error:", np.average(mederr, weights=weights))
 
-# print("Total execution time:", time.time() - startall)
+print("Total execution time:", time.time() - startall)
