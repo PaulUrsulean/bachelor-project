@@ -56,8 +56,14 @@ def get_relations(kb_dir, rel_ids, n_triples):
 	if n_triples > len(heads):
 		n_triples = len(heads)
 
+	X = np.column_stack((heads, rels, tails))
 
-	return heads[:n_triples].astype(np.int64), rels[:n_triples].astype(np.int64), tails[:n_triples].astype(np.int64)
+	np.random.shuffle(X)
+
+
+
+
+	return X[:,0][:n_triples].astype(np.int64), X[:,1][:n_triples].astype(np.int64), X[:,2][:n_triples].astype(np.int64)
 
 def get_mean_rank(model_dir, kb_dir, rel_ids=None, n_triples=float("inf"), use_transe=True):
 	with tf.Session() as sess:
@@ -100,8 +106,13 @@ def get_mean_rank(model_dir, kb_dir, rel_ids=None, n_triples=float("inf"), use_t
 		# ranks_forward = tf.map_fn(lambda index: get_translation_rank(translations_forward[index], index, tails_embedded), ranks_forward)
 		# ranks_backward= tf.map_fn(lambda index: get_translation_rank(translations_backward[index], index, heads_embedded), ranks_backward)
 
-		ranks_forward  	= tf.map_fn(lambda index: get_rank(heads, rels, tails, heads_embedded, rels_embedded, tails_embedded, index, True, use_transe), ranks_forward)
-		ranks_backward 	= tf.map_fn(lambda index: get_rank(heads, rels, tails, heads_embedded, rels_embedded, tails_embedded, index, False, use_transe), ranks_backward)
+		ranks_forward_transe  	= tf.map_fn(lambda index: get_rank(heads, rels, tails, heads_embedded, rels_embedded, tails_embedded, index, True, True), ranks_forward)
+		ranks_backward_transe 	= tf.map_fn(lambda index: get_rank(heads, rels, tails, heads_embedded, rels_embedded, tails_embedded, index, False, True), ranks_backward)
+
+		ranks_forward_nlp  	= tf.map_fn(lambda index: get_rank(heads, rels, tails, heads_embedded, rels_embedded, tails_embedded, index, True, False), ranks_forward)
+		ranks_backward_nlp 	= tf.map_fn(lambda index: get_rank(heads, rels, tails, heads_embedded, rels_embedded, tails_embedded, index, False, False), ranks_backward)
+
+		return sess.run([tf.reduce_mean(ranks_forward_transe), tf.reduce_mean(ranks_backward_transe), tf.reduce_mean(ranks_forward_nlp), tf.reduce_mean(ranks_backward_nlp)])
 
 		# Get mean rank
 		mean_rank_forward  	= tf.reduce_mean(ranks_forward)
@@ -198,17 +209,24 @@ def apply_model(h, r, t, i, forward):
 	return tf.nn.top_k(predicted, tf.size(predicted))
 
 
-
-
-
-
-
-
 start = time.time()
+
+fb = trident.Db("fb15k")
+
+n_triples = 100
+
+ranges = [50, 1500]
 
 dicc = {}
 
-ids = [1, 2, 10, 13, 14, 16, 18, 19, 22, 23, 24, 25, 26, 28, 30, 31, 33, 37, 38, 39, 43, 44, 45, 47, 48, 51, 52, 54, 61, 66, 77, 78, 79, 80, 85, 86, 89, 92, 99]
+# ids = [1, 2, 10, 13, 14, 16, 18, 19, 22, 23, 24, 25, 26, 28, 30, 31, 33, 37, 38, 39, 43, 44, 45, 47, 48, 51, 52, 54, 61, 66, 77, 78, 79, 80, 85, 86, 89, 92, 99]
+
+ids = [i for i in np.unique(fb.all_p()) if fb.count_p(i) > ranges[0] and fb.count_p(i) <= ranges[1]]
+# ids = np.unique(fb.all_p())
+# np.random.shuffle(ids)
+
+# v = np.vectorize(lambda i: fb.count_p(i))
+# print(max(v(ids)), min(v(ids)))
 
 # i = 221
 
@@ -216,8 +234,13 @@ ids = [1, 2, 10, 13, 14, 16, 18, 19, 22, 23, 24, 25, 26, 28, 30, 31, 33, 37, 38,
 
 # get_mean_rank("./models_fb", "./fb15k", rel_ids = None,use_transe=True, n_triples = 5)
 
-f, b = get_mean_rank("./models_fb", "./fb15k", rel_ids=ids,use_transe=False, n_triples = 10)
-print("\nMy technique:\nForward rank: {}\nBackward rank: {}\n".format(f, b))
+print("Range: {} - {}".format(ranges[0], ranges[1]))
+
+f1, b1, f2, b2 = get_mean_rank("./models_fb", "./fb15k", rel_ids=ids,use_transe=True, n_triples = n_triples)
+print("\nTransE:\nForward rank: {}\nBackward rank: {}\n".format(f1, b1))
+print("\nMy technique:\nForward rank: {}\nBackward rank: {}\n".format(f2, b2))
+
+
 # # # print("Labels forward rank: {}\nLabels backward rank: {}".format(np.mean(f[1]), np.mean(b[1])))
 
 

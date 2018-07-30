@@ -8,10 +8,15 @@ import scipy.sparse as sp
 
 class TripleTransformer(BaseEstimator, TransformerMixin):
 
-	def __init__(self, min_df=1, max_df=1.0, unique=True, vectorizer=None):
-		self.min_df = min_df
-		self.max_df = max_df
-		self.unique = unique
+	def __init__(self, min_df=1, max_df=1.0, unique=True, vectorizer=None, stop_words=None, max_features=None):
+		self.min_df 		= min_df
+		self.max_df 		= max_df
+		self.unique 		= unique
+		self.stop_words 	= stop_words
+		self.max_features 	= max_features
+
+		self.vec 			= TfidfVectorizer(min_df=self.min_df, max_df=self.max_df, stop_words=self.stop_words, max_features=self.max_features) if vectorizer is None else vectorizer
+
 
 		with open("short_descriptions.txt", "rb") as f:
 			short_desc = pickle.load(f)
@@ -19,7 +24,6 @@ class TripleTransformer(BaseEstimator, TransformerMixin):
 		fb = trident.Db("fb15k")
 		self.get_desc = np.vectorize(lambda index: short_desc[fb.lookup_str(index)])
 
-		self.vec = TfidfVectorizer(min_df=self.min_df, max_df=self.max_df) if vectorizer is None else vectorizer
 
 	def fit(self, x, y=None):
 
@@ -31,6 +35,7 @@ class TripleTransformer(BaseEstimator, TransformerMixin):
 		# print(len(docs))
 
 		self.vec.fit(self.get_desc(docs))
+		# print(len(self.vec.get_feature_names()))
 		return self
 
 	def transform(self, x):
